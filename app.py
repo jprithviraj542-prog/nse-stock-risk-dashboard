@@ -26,6 +26,15 @@ cols = ["annual_volatility_pct", "total_return_pct", "max_drawdown_pct"]
 X = StandardScaler().fit_transform(feats[cols])
 feats["cluster"] = KMeans(n_clusters=3, n_init=10, random_state=42).fit_predict(X)
 
+# name each group from its averages
+avg = feats.groupby("cluster")[cols].mean()
+star = avg["total_return_pct"].idxmax()
+risky = avg.drop(star)["annual_volatility_pct"].idxmax()
+names = {star: "Star performers", risky: "High risk"}
+for c in avg.index:
+    names.setdefault(c, "Stable but slow")
+feats["group"] = feats["cluster"].map(names)
+
 stock = st.selectbox("Choose a stock", feats.index)
 row = feats.loc[stock]
 
@@ -39,9 +48,11 @@ chart = pd.DataFrame({"Price": p, "50-day average": p.rolling(50).mean()})
 st.subheader("Price and 50-day average")
 st.line_chart(chart)
 
-group = feats[feats["cluster"] == row["cluster"]].index.str.replace(".NS", "", regex=False)
+members = feats[feats["group"] == row["group"]].index.str.replace(".NS", "", regex=False)
 st.subheader("Risk group")
-st.write(f"{stock} is in risk group {int(row['cluster'])} with: " + ", ".join(group))
+st.write(f"**{stock}** is in the **{row['group']}** group with: " + ", ".join(members))
+st.caption("Average of each group")
+st.dataframe(avg.rename(index=names).round(1))
 
 st.subheader("Volatility of all 25 stocks")
 st.bar_chart(feats["annual_volatility_pct"])
