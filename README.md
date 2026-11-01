@@ -1,9 +1,11 @@
 # NSE Stock Risk Dashboard
 
+**Live app:** https://your-link.streamlit.app
+
 Data pipeline, risk analysis and forecasting for 25 NSE stocks, with an interactive Streamlit dashboard.
 
-## What it does
-- Downloads 5 years of daily prices with yfinance and stores them in a SQLite database
+## What it  a SQdoes
+- - Groups the 25 stocks into 3 risk profiles ("Star performers", "Stable but slow", "High risk") using KMeans clustering
 - Calculates daily returns, volatility, total return and max drawdown
 - Groups the 25 stocks into 3 risk profiles with KMeans clustering
 - Compares forecasting models (Naive, ARIMA, Exponential Smoothing, Random Forest) with a time-based split
