@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
+import yfinance as yf
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 
 st.set_page_config(page_title="NSE Stock Risk Dashboard", layout="wide")
 st.title("NSE Stock Risk Dashboard")
-st.caption("5 years of daily data for 25 NSE stocks")
+st.caption("5 years of daily data for 25 NSE stocks, plus latest prices")
 
 @st.cache_data
 def load():
@@ -20,13 +21,20 @@ def load():
         results = None
     return prices, feats, results
 
+@st.cache_data(ttl=900)
+def live_prices(tickers):
+    try:
+        d = yf.download(list(tickers), period="7d", progress=False, auto_adjust=True)["Close"]
+        return d.dropna(how="all").ffill()
+    except Exception:
+        return None
+
 prices, feats, results = load()
 
 cols = ["annual_volatility_pct", "total_return_pct", "max_drawdown_pct"]
 X = StandardScaler().fit_transform(feats[cols])
 feats["cluster"] = KMeans(n_clusters=3, n_init=10, random_state=42).fit_predict(X)
 
-# name each group from its averages
 avg = feats.groupby("cluster")[cols].mean()
 star = avg["total_return_pct"].idxmax()
 risky = avg.drop(star)["annual_volatility_pct"].idxmax()
@@ -43,9 +51,23 @@ c1.metric("5-year return", f"{row['total_return_pct']:.0f}%")
 c2.metric("Annual volatility", f"{row['annual_volatility_pct']:.1f}%")
 c3.metric("Max drawdown", f"{row['max_drawdown_pct']:.0f}%")
 
+live = live_prices(tuple(feats.index))
+st.subheader("Latest price (refreshes every 15 minutes)")
+if live is not None and stock in live.columns and len(live) >= 2:
+    last = live[stock].iloc[-1]
+    prev = live[stock].iloc[-2]
+    a, b = st.columns(2)
+    a.metric("Last price", f"Rs {last:,.2f}", f"{(last / prev - 1) * 100:+.2f}%")
+    b.metric("Price date", str(live.index[-1].date()))
+    st.subheader("Latest day's movers (all 25 stocks)")
+    day = ((live.iloc[-1] / live.iloc[-2] - 1) * 100).round(2).sort_values(ascending=False)
+    st.dataframe(day.rename("change %"))
+else:
+    st.info("Live price is not available right now. Showing saved data only.")
+
 p = prices[prices["stock"] == stock].set_index("date")["close"]
 chart = pd.DataFrame({"Price": p, "50-day average": p.rolling(50).mean()})
-st.subheader("Price and 50-day average")
+st.subheader("Price and 50-day average (saved data)")
 st.line_chart(chart)
 
 members = feats[feats["group"] == row["group"]].index.str.replace(".NS", "", regex=False)
@@ -60,4 +82,4 @@ st.bar_chart(feats["annual_volatility_pct"])
 if results is not None:
     st.subheader("Forecast model comparison (ICICIBANK, last 60 days)")
     st.dataframe(results, hide_index=True)
-st.caption("Educational project. Not investment advice.")
+st.caption("Educational project. Not investment advice. Prices from Yahoo Finance, may be delayed.")
