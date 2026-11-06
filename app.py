@@ -7,7 +7,7 @@ from sklearn.cluster import KMeans
 
 st.set_page_config(page_title="NSE Stock Risk Dashboard", layout="wide")
 st.title("NSE Stock Risk Dashboard")
-st.caption("5 years of daily data for 25 NSE stocks, plus latest prices")
+st.caption("5 years of daily data for 25 NSE stocks, compared with Nifty 50, plus latest prices")
 
 @st.cache_data
 def load():
@@ -19,7 +19,11 @@ def load():
         results = pd.read_sql("SELECT * FROM model_results", conn)
     except Exception:
         results = None
-    return prices, feats, results
+    try:
+        bench = pd.read_sql("SELECT * FROM benchmark", conn).set_index("stock")
+    except Exception:
+        bench = None
+    return prices, feats, results, bench
 
 @st.cache_data(ttl=900)
 def live_prices(tickers):
@@ -29,7 +33,7 @@ def live_prices(tickers):
     except Exception:
         return None
 
-prices, feats, results = load()
+prices, feats, results, bench = load()
 
 cols = ["annual_volatility_pct", "total_return_pct", "max_drawdown_pct"]
 X = StandardScaler().fit_transform(feats[cols])
@@ -51,14 +55,24 @@ c1.metric("5-year return", f"{row['total_return_pct']:.0f}%")
 c2.metric("Annual volatility", f"{row['annual_volatility_pct']:.1f}%")
 c3.metric("Max drawdown", f"{row['max_drawdown_pct']:.0f}%")
 
+if bench is not None and stock in bench.index and "NIFTY50" in bench.index:
+    b = bench.loc[stock]
+    n = bench.loc["NIFTY50"]
+    st.subheader("Compared with Nifty 50")
+    d1, d2, d3 = st.columns(3)
+    d1.metric("Nifty 50 return", f"{n['total_return_pct']:.0f}%")
+    d2.metric("Stock vs Nifty", f"{b['total_return_pct']:.0f}%",
+              f"{b['total_return_pct'] - n['total_return_pct']:+.0f} pts vs Nifty")
+    d3.metric("Sharpe ratio", f"{b['sharpe']:.2f}")
+
 live = live_prices(tuple(feats.index))
 st.subheader("Latest price (refreshes every 15 minutes)")
 if live is not None and stock in live.columns and len(live) >= 2:
     last = live[stock].iloc[-1]
     prev = live[stock].iloc[-2]
-    a, b = st.columns(2)
+    a, b2 = st.columns(2)
     a.metric("Last price", f"Rs {last:,.2f}", f"{(last / prev - 1) * 100:+.2f}%")
-    b.metric("Price date", str(live.index[-1].date()))
+    b2.metric("Price date", str(live.index[-1].date()))
     st.subheader("Latest day's movers (all 25 stocks)")
     day = ((live.iloc[-1] / live.iloc[-2] - 1) * 100).round(2).sort_values(ascending=False)
     st.dataframe(day.rename("change %"))
@@ -75,6 +89,14 @@ st.subheader("Risk group")
 st.write(f"**{stock}** is in the **{row['group']}** group with: " + ", ".join(members))
 st.caption("Average of each group")
 st.dataframe(avg.rename(index=names).round(1))
+
+if bench is not None and "NIFTY50" in bench.index:
+    st.subheader("All stocks vs Nifty 50 (best Sharpe first)")
+    stocks_only = bench.drop("NIFTY50")
+    beat = int((stocks_only["beat_nifty"] == "yes").sum())
+    st.write(f"**{beat} of {len(stocks_only)}** stocks beat Nifty 50 over this period.")
+    st.dataframe(stocks_only.sort_values("sharpe", ascending=False))
+    st.caption("Sharpe uses an assumed 6.5% risk-free rate. Past performance only.")
 
 st.subheader("Volatility of all 25 stocks")
 st.bar_chart(feats["annual_volatility_pct"])
