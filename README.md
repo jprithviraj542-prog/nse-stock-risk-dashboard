@@ -4,7 +4,7 @@
 
 
 
-![Dashboard](dashboard.png)
+![Dashboard](forecast_chart.png)
 
 
 
